@@ -4,8 +4,8 @@ import android.support.annotation.NonNull;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
-import android.view.View;
-import android.widget.Button;
+import android.widget.ArrayAdapter;
+import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -20,53 +20,73 @@ import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
 
-public class MainActivity extends AppCompatActivity {
+import java.util.ArrayList;
+import java.util.List;
+
+public final class MainActivity extends AppCompatActivity {
 
     private DatabaseReference db;
     private FirebaseAuth mAuth;
     private FirebaseAuth.AuthStateListener mAuthListener;
     private static final String TAG = "<FB>";
 
+    private ArrayList<User> userList = new ArrayList<>();
+    private ArrayAdapter<User> adapter;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-
+        //
         setupUI();
         setupFB();
-        login();
+        authFB();
+    }
+
+    @Override
+    public void onStart() {
+        super.onStart();
+        mAuth.addAuthStateListener(mAuthListener);
+    }
+
+    @Override
+    public void onStop() {
+        super.onStop();
+        if (mAuthListener != null) {
+            mAuth.removeAuthStateListener(mAuthListener);
+        }
     }
 
     private void setupUI() {
-        Button button = (Button) findViewById(R.id.something_button);
-        button.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-
-                db.child("users").addValueEventListener(new ValueEventListener() {
-                    @Override
-                    public void onDataChange(DataSnapshot dataSnapshot) {
-                        StringBuilder sb = new StringBuilder();
-                        int i = 1;
-                        for(DataSnapshot child : dataSnapshot.getChildren()) {
-                            sb.append(i++).append(": ").append(child.getKey()).append("\n");
-                        }
-                        setInfo(sb.toString());
-                    }
-                    @Override
-                    public void onCancelled(DatabaseError databaseError) {
-
-                    }
-                });
-
-            }
-        });
+        UserView.init(this);
+        adapter = new UserArrayAdapter(this,getApplicationContext(),R.id.userlist, userList);
+        ListView tv = (ListView) findViewById(R.id.userlist);
+        tv.setAdapter(adapter);
     }
 
+
     //sets the info label to give feedback to the user...
-    private void setInfo(final String info) {
-        final TextView tv = (TextView) findViewById(R.id.infoText);
-        runOnUiThread(() -> tv.setText(info));
+    private void syncUsers(DataSnapshot users) {
+        //Lets do 'heavy' work here, and not in the UI thread...
+        Log.d("syncUsers", "Refreshing user list(count=" + users.getChildrenCount() + ")");
+
+        List<User> new_users = new ArrayList<>((int) users.getChildrenCount());//temp list to hold users
+        for(DataSnapshot userSS : users.getChildren()) {
+            new_users.add(User.of(userSS));
+        }
+
+        runOnUiThread(() -> {//We can only modify the any UI component in the UI thread...
+            {//Sync user count
+                TextView v = (TextView) findViewById(R.id.user_count);
+                v.setText(users.getChildrenCount() + " users signed in!");
+            }
+            {//Sync user list
+                userList.clear();//clear old users
+                userList.addAll(new_users);//populate it with the new users
+                adapter.notifyDataSetChanged(); //refresh the list
+            }
+            Log.d("syncUsers","User info refreshed");
+        });
     }
 
     private void setupFB() {
@@ -85,7 +105,7 @@ public class MainActivity extends AppCompatActivity {
         };
     }
 
-    private void login() {
+    private void authFB() {
         mAuth.signInWithEmailAndPassword("test@test.com", "password")
                 .addOnCompleteListener(this, new OnCompleteListener<AuthResult>() {
                     @Override
@@ -111,35 +131,16 @@ public class MainActivity extends AppCompatActivity {
 
     //At this point we are authed and ready to work with the database.
     private void load() {
+        //Set it up to sync the list every firebase update...
         db.child("users").addValueEventListener(new ValueEventListener() {
             @Override
-            public void onDataChange(final DataSnapshot dataSnapshot) {
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        TextView v = (TextView) findViewById(R.id.user_count);
-                        v.setText(dataSnapshot.getChildrenCount() + " users signed in!");
-                    }
-                });
+            public void onDataChange(DataSnapshot dataSnapshot) {
+                syncUsers(dataSnapshot);
             }
             @Override
-            public void onCancelled(DatabaseError databaseError) {
-            }
+            public void onCancelled(DatabaseError databaseError) {/* Empty */}
         });
     }
 
-    @Override
-    public void onStart() {
-        super.onStart();
-        mAuth.addAuthStateListener(mAuthListener);
-    }
-
-    @Override
-    public void onStop() {
-        super.onStop();
-        if (mAuthListener != null) {
-            mAuth.removeAuthStateListener(mAuthListener);
-        }
-    }
 
 }
