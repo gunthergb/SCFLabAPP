@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">SCF Lab Login Tool</string>
+    <string name="auth_failed">Failed to auth, scrub</string>
+    <string name="auth_succeed">Successfully auth</string>
+</resources>
